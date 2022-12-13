@@ -3,11 +3,12 @@ from typing import List
 import numpy as np  # for mathematical operations
 import pandas as pd  # to work with dataframes
 # import seaborn as sns
+from sklearn.model_selection import train_test_split
 from sklearn.decomposition import randomized_svd
 import streamlit as st
 # from matplotlib import pyplot as plt
 from sklearn.ensemble import (
-    
+
     RandomForestClassifier
 )
 from sklearn.metrics import (
@@ -15,7 +16,7 @@ from sklearn.metrics import (
     f1_score,
     precision_score, recall_score, roc_auc_score
 )
-from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
 
@@ -126,9 +127,31 @@ def stan_scal(df):
     return df_final
 
 
+# train test split
+@st.cache
+def ttsplit(df2, label_col_name='Attrition_Flag', test_size=0.2):
+    y = df2[label_col_name]
+    df2 = df2.drop(label_col_name, axis=1, inplace=False)
+    assert label_col_name not in df2.columns
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        df2, y, test_size=test_size, shuffle=True, random_state=RANDOM_STATE, stratify=y)
+
+    return X_train, X_test, y_train, y_test
+
+
+# simple evaluation
+
+def train_eval(model, X_train, X_test, y_train, y_test):
+    model.fit(X_train, y_train)
+    predictions = model.predict(X_test)
+    return round(f1_score(y_test, predictions), 3)
+
+
 with header:
     st.title('Welcome to my Data Science Project')
-
+    st.write('[GitHub Repo](https://github.com/abhishek-mehra/Credit_Card)')
+    st.write('[LinkedIn](https://www.linkedin.com/in/mehra-abhishek/)')
 
 with dataset:
     st.header('It is a Credit card customers dataset')
@@ -153,11 +176,8 @@ with dataset:
 
 
 with eda:
-    st.header('Explanatory Data analysis')
-    st.text('I have performed statistical analysis on numerical features.')
-    st.text('I have plotted frequency charts, scatter plot for dataset features.')
-    st.write(
-        'Link to the Github repository [click here](https://github.com/abhishek-mehra/Credit_Card)')
+    st.header('Exploratory Data analysis')
+    st.markdown('The dataset contains information about the customer, including their age, gender, income bracket, and credit card characteristics like their total revolving debt, credit limit, months of inactivity, and open to buy etc. The dependent variable is attrition which tells us whether the customer is still associated with the services or has left the credit card service.')
 
 
 # 1. asking user for feature engineering options :(a) create a new feature  (b) scale the features
@@ -172,12 +192,14 @@ with machine_learning:
     st.subheader('Data Peparation Options')
 
     # (a)asking user for feature engineering options :(a) create a new feature
+    st.markdown('Do you want to add a new feature, average transaction amount. ')
     feature_selection_ouput = st.selectbox(
-        'Do you want to add a new feature?', ('Yes', 'No'))
+        'Adding this feature will give more insights to machine learning model', ('Yes', 'No'))
 
     # (b) scale the features
+    st.markdown('Do you want to scale the numerical features?')
     scale_selection_ouput = st.selectbox(
-        'Do you want to scale the numerical features?', ('Yes', 'No'))
+        'Scaling will bring all the numerical features on the same scale, helping the machine learning model to learn better.', ('Yes', 'No'))
 
     if feature_selection_ouput == 'Yes':
         cc_df = new_feat(cc_df)
@@ -191,7 +213,7 @@ with machine_learning:
 
     # 2. asking user for Model selection: (a) Random Forest
     model_selection_ouput = st.selectbox(
-        'Which model do you want to select ?', ('Random Forest Classifier', 'XGBClassifier'))
+        'Which model do you want to select ?', ('XGBClassifier', 'Random Forest Classifier'))
 
     # 3.asking user for Model selection: (a)number of estimators
     estimators_input = st.slider(
@@ -205,14 +227,21 @@ with machine_learning:
     n_folds = st.slider('How many CV folds?',
                         min_value=5, max_value=10, step=1)
 
-    if model_selection_ouput == 'Random Forest Classifier':
-        rf = RandomForestClassifier(
-            n_estimators=estimators_input, max_depth=max_depth_input, random_state=RANDOM_STATE)
-        st.write("Average CV F1 score is: ", round(
-            cv_score_model(cc_df, rf, n_folds), 3))
+    # Dividing data into train and test
+    # we are divinding dataset into  train -90% and test -10% of the dataset
+    X_train, X_test_f, y_train, y_test_f = ttsplit(cc_df, test_size=0.2)
+    # this is required since my cv function requires complete data set. features as well as label
+    train_final = X_train.join(y_train)
 
+    if model_selection_ouput == 'Random Forest Classifier':
+        model = RandomForestClassifier(
+            n_estimators=estimators_input, max_depth=max_depth_input, random_state=RANDOM_STATE)
     else:
-        xg = XGBClassifier(n_estimators=estimators_input,
+        model = XGBClassifier(n_estimators=estimators_input,
                            max_depth=max_depth_input, random_state=RANDOM_STATE)
-        st.write("Average CV F1 score is: ", round(
-            cv_score_model(cc_df, xg, n_folds), 3))
+
+    st.write("Average CV F1 score on the training set is: ", round(
+        cv_score_model(train_final, model, n_folds), 3))
+
+    st.write('F1 score on the test set is:', train_eval(
+        model, X_train, X_test_f, y_train, y_test_f))
