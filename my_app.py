@@ -314,6 +314,8 @@ with machine_learning:
     classification_report_output = classification_report_output.rename(
         index={'0': 'Existing Customer', '1': 'Attrited Customer'})
 
+    classification_report_output = classification_report_output.round(3)
+
     # adding a column name
     result_test = ['Hold out test set'] + result_test
 
@@ -335,16 +337,16 @@ with machine_learning:
     
     # showing the ouputs
     st.write(outputs.head())
-    st.subheader('Classification Report')
+    st.subheader('Classification Report on Hold out set')
     st.write(classification_report_output)
 
     st.subheader('Miss-classified data ')
     st.write(miss_data)
 
-    st.subheader('Receiver operating characteristics curve')
+    st.subheader('Receiver operating characteristics curve on Cross validated dataset')
     st.pyplot(fig)
 
-    button_result = st.button("click for feature importance chart")
+    button_result = st.button("Click for feature importance chart")
     if button_result:
         # st.write(fi)
         st.pyplot(fig3)
