@@ -14,11 +14,15 @@ from sklearn.ensemble import (
 from sklearn.metrics import (
 
     f1_score,
-    precision_score, recall_score, roc_auc_score
+    precision_score, recall_score, roc_auc_score, classification_report, roc_curve
 )
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
+from sympy import re
 from xgboost import XGBClassifier
+
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 RANDOM_STATE = 1
 
@@ -72,19 +76,43 @@ def cv_score_model(df, model, folds=5, label_col_name="Attrition_Flag"):
 
         pred = model.predict(X_test)
 
+        # predicting probabilty of predictions
+        pred_prob = model.predict_proba(X_test)[::, 1]
+        fpr, tpr, _ = roc_curve(y_test, pred_prob)
+
         f1: float = float(f1_score(y_test, pred))
         f1_score_c.append(f1)
 
         # roc = roc_auc_score(y_test, pred)
         # roc_auc.append(roc)
 
-        # prec = precision_score(y_test, pred)
-        # precision.append(prec)
+        prec = precision_score(y_test, pred)
+        precision.append(prec)
 
-        # rec = recall_score(y_test, pred)
-        # recall.append(rec)
+        rec = recall_score(y_test, pred)
+        recall.append(rec)
 
-    return np.mean(f1_score_c)
+    return np.mean(f1_score_c), np.mean(precision), np.mean(recall), fpr, tpr
+
+# simple evaluation
+
+
+def train_eval(model, X_train, X_test, y_train, y_test):
+    model.fit(X_train, y_train)
+    predictions = model.predict(X_test)
+
+    # miss classified data
+    missclassified = y_test != predictions
+    miss_classified_df = X_test[missclassified]
+
+    # miss_np = np.concatenate(X_test[missclassified], y_test[missclassified],predictions[missclassified],axis=1)
+    # miss_df = pd.DataFrame(data=miss_np, columns = ['x', 'y_true','y_pred'])
+
+    return (round(f1_score(y_test, predictions), 3),
+            round(precision_score(y_test, predictions), 3),
+            round(recall_score(y_test, predictions), 3),
+            classification_report(y_test, predictions, output_dict=True),
+            miss_classified_df)
 
 
 # adding a new feature
@@ -140,14 +168,6 @@ def ttsplit(df2, label_col_name='Attrition_Flag', test_size=0.2):
     return X_train, X_test, y_train, y_test
 
 
-# simple evaluation
-
-def train_eval(model, X_train, X_test, y_train, y_test):
-    model.fit(X_train, y_train)
-    predictions = model.predict(X_test)
-    return round(f1_score(y_test, predictions), 3)
-
-
 with header:
     st.title('Welcome to my Data Science Project')
     st.write('[GitHub Repo](https://github.com/abhishek-mehra/Credit_Card)')
@@ -168,16 +188,30 @@ with dataset:
                            'CLIENTNUM'], axis=1,
                           inplace=True)
 
-    credit_card_data = credit_card_data.replace(
-        {'Existing Customer': 0, 'Attrited Customer': 1})
 
-    # category conversion
-    cc_df = cate_type(credit_card_data)
+def fi(model):
+    f = pd.DataFrame({'Features': model.feature_names_in_,
+                     'Importance': model.feature_importances_})
+    f.sort_values(by='Importance', ascending=False, inplace=True)
+    return f
 
 
 with eda:
     st.header('Exploratory Data analysis')
     st.markdown('The dataset contains information about the customer, including their age, gender, income bracket, and credit card characteristics like their total revolving debt, credit limit, months of inactivity, and open to buy etc. The dependent variable is attrition which tells us whether the customer is still associated with the services or has left the credit card service.')
+    st.markdown('I conducted additional analysis on the dataset attributes. The data visualizations reveal several significant observations.')
+
+    fig = plt.figure(figsize=(10, 4))
+    sns.scatterplot(data=credit_card_data, x='Total_Trans_Amt',
+                    y='Total_Trans_Ct', hue='Attrition_Flag')
+    st.pyplot(fig)
+
+    fig2 = plt.figure(figsize=(10, 4))
+    sns.scatterplot(data=credit_card_data, x='Avg_Utilization_Ratio',
+                    y='Total_Revolving_Bal', hue='Attrition_Flag')
+    st.pyplot(fig2)
+
+    st.markdown('Customers with higher transaction amounts and higher transaction numbers have a lower attrition rate than those with lower transaction amounts and lower transaction counts. In the second scatter plot, the number of attrited clients is concentrated in the bottom half, where credit is used the least. As a result, users who use the service less frequently abandon it.')
 
 
 # 1. asking user for feature engineering options :(a) create a new feature  (b) scale the features
@@ -187,12 +221,19 @@ with eda:
 # 3. asking user for parameters selection: (a)number of estimators (b) max depth
 
 
+# replacing label class as 0 and 1.
+    credit_card_data = credit_card_data.replace(
+        {'Existing Customer': 0, 'Attrited Customer': 1})
+
 with machine_learning:
+
     st.header('Machine learning: Predicting Attrition')
     st.subheader('Data Peparation Options')
 
     # (a)asking user for feature engineering options :(a) create a new feature
-    st.markdown('Do you want to add a new feature, average transaction amount. ')
+    st.markdown('Do you want to add a new feature, average transaction amount.')
+    st.markdown(
+        'Average transaction amount = Total transaction amount/ Total transaction count')
     feature_selection_ouput = st.selectbox(
         'Adding this feature will give more insights to machine learning model', ('Yes', 'No'))
 
@@ -200,6 +241,9 @@ with machine_learning:
     st.markdown('Do you want to scale the numerical features?')
     scale_selection_ouput = st.selectbox(
         'Scaling will bring all the numerical features on the same scale, helping the machine learning model to learn better.', ('Yes', 'No'))
+
+    # category conversion
+    cc_df = cate_type(credit_card_data)
 
     if feature_selection_ouput == 'Yes':
         cc_df = new_feat(cc_df)
@@ -238,10 +282,71 @@ with machine_learning:
             n_estimators=estimators_input, max_depth=max_depth_input, random_state=RANDOM_STATE)
     else:
         model = XGBClassifier(n_estimators=estimators_input,
-                           max_depth=max_depth_input, random_state=RANDOM_STATE)
+                              max_depth=max_depth_input, random_state=RANDOM_STATE)
 
-    st.write("Average CV F1 score on the training set is: ", round(
-        cv_score_model(train_final, model, n_folds), 3))
+    st.subheader('Evaluation Metrics')
 
-    st.write('F1 score on the test set is:', train_eval(
-        model, X_train, X_test_f, y_train, y_test_f))
+    # results from cv evaluation stored in a list. F1, precision, recall in this order.
+
+    result_train = list(cv_score_model(train_final, model, n_folds))
+
+    tpr = result_train.pop()
+    fpr = result_train.pop()
+
+    result_train = ['Train set'] + result_train
+
+    # printing roc-auc
+    fig = plt.figure(figsize=(10, 4))
+    plt.plot(fpr, tpr)
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+
+    # result of evaluation from testing set
+    result_test = list(train_eval(model, X_train, X_test_f, y_train, y_test_f))
+
+    # miss classified data
+    miss_data = result_test.pop()
+
+    # putting classification report in a dataframe
+    classification_report_output = pd.DataFrame(
+        data=result_test.pop()).transpose()
+
+    classification_report_output = classification_report_output.rename(
+        index={'0': 'Existing Customer', '1': 'Attrited Customer'})
+
+    # adding a column name
+    result_test = ['Hold out test set'] + result_test
+
+    # adding rows to the dataframe using loc(key)
+    outputs = pd.DataFrame(
+        columns=['Scores', 'F1 ', 'Precision ', 'Recall score'])
+    outputs.loc[0] = result_train
+    outputs.loc[1] = result_test
+
+   # feature importance
+    fig3 = plt.figure(figsize=(10,4))
+    fi_df = fi(model)
+    plt.xticks(rotation='vertical')
+    sns.barplot(data=fi_df,x=fi_df['Features'],y=fi_df['Importance'])
+    
+       
+    
+    
+    
+    # showing the ouputs
+    st.write(outputs.head())
+    st.subheader('Classification Report')
+    st.write(classification_report_output)
+
+    st.subheader('Miss-classified data ')
+    st.write(miss_data)
+
+    st.subheader('Receiver operating characteristics curve')
+    st.pyplot(fig)
+
+    button_result = st.button("click for feature importance chart")
+    if button_result:
+        # st.write(fi)
+        st.pyplot(fig3)
+
+ 
