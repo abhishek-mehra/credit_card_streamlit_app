@@ -4,7 +4,7 @@ import numpy as np  # for mathematical operations
 import pandas as pd  # to work with dataframes
 # import seaborn as sns
 from sklearn.model_selection import train_test_split
-from sklearn.decomposition import randomized_svd
+
 import streamlit as st
 # from matplotlib import pyplot as plt
 from sklearn.ensemble import (
@@ -14,11 +14,11 @@ from sklearn.ensemble import (
 from sklearn.metrics import (
 
     f1_score,
-    precision_score, recall_score, roc_auc_score, classification_report, roc_curve
+    precision_score, recall_score, classification_report, roc_curve
 )
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
-from sympy import re
+
 from xgboost import XGBClassifier
 
 import seaborn as sns
@@ -101,18 +101,35 @@ def train_eval(model, X_train, X_test, y_train, y_test):
     model.fit(X_train, y_train)
     predictions = model.predict(X_test)
 
-    # miss classified data
-    missclassified = y_test != predictions
-    miss_classified_df = X_test[missclassified]
+    # # miss classified data - false positives
+    # missclassified = y_test != predictions
+    # miss_classified_df = X_test[missclassified]
 
-    # miss_np = np.concatenate(X_test[missclassified], y_test[missclassified],predictions[missclassified],axis=1)
-    # miss_df = pd.DataFrame(data=miss_np, columns = ['x', 'y_true','y_pred'])
+    #dataframe containing just y_test and predictions
+    output_df = pd.DataFrame({'Actual':y_test, 'Predicted':predictions})
 
-    return (round(f1_score(y_test, predictions), 3),
-            round(precision_score(y_test, predictions), 3),
-            round(recall_score(y_test, predictions), 3),
-            classification_report(y_test, predictions, output_dict=True),
-            miss_classified_df)
+    # miss classified data - false positives
+    fp_df = X_test.loc[(output_df['Actual']==0) & (output_df['Predicted']==1)]
+    
+
+    # miss classified data - false negatives
+    fn_df = X_test.loc[(output_df['Actual']==1) & (output_df['Predicted']==0)]
+    
+    output_dic = {'f1':round(f1_score(y_test, predictions), 3),
+    'precision':round(precision_score(y_test, predictions), 3),
+    'recall':(recall_score(y_test, predictions), 3),
+    'classification':classification_report(y_test, predictions, output_dict=True),
+    'false_positves':fp_df,
+    'false_negatives':fn_df}
+
+    return output_dic
+
+    # return (round(f1_score(y_test, predictions), 3),
+    #         round(precision_score(y_test, predictions), 3),
+    #         round(recall_score(y_test, predictions), 3),
+    #         classification_report(y_test, predictions, output_dict=True),
+    #         fp_df,
+    #         fn_df)
 
 
 # adding a new feature
@@ -290,9 +307,9 @@ with machine_learning:
 
     result_train = list(cv_score_model(train_final, model, n_folds))
 
+
     tpr = result_train.pop()
     fpr = result_train.pop()
-
     result_train = ['Train set'] + result_train
 
     # printing roc-auc
@@ -302,14 +319,23 @@ with machine_learning:
     plt.ylabel('True Positive Rate')
 
     # result of evaluation from testing set
-    result_test = list(train_eval(model, X_train, X_test_f, y_train, y_test_f))
+    result_test_dic = train_eval(model, X_train, X_test_f, y_train, y_test_f)
+
+#  output_dic = {'f1':round(f1_score(y_test, predictions), 3),
+#     'precision':round(precision_score(y_test, predictions), 3),
+#     'recall':(recall_score(y_test, predictions), 3),
+#     'classification':classification_report(y_test, predictions, output_dict=True),
+#     'false_positves':fp_df,
+#     'false_negatives':fn_df}
 
     # miss classified data
-    miss_data = result_test.pop()
+    fp_df = result_test_dic['false_positves']
+    fn_df = result_test_dic['false_negatives']
+
 
     # putting classification report in a dataframe
     classification_report_output = pd.DataFrame(
-        data=result_test.pop()).transpose()
+        data=result_test_dic['classification']).transpose()
 
     classification_report_output = classification_report_output.rename(
         index={'0': 'Existing Customer', '1': 'Attrited Customer'})
@@ -317,7 +343,8 @@ with machine_learning:
     classification_report_output = classification_report_output.round(3)
 
     # adding a column name
-    result_test = ['Hold out test set'] + result_test
+
+    result_test = ['Hold out test set'] + list([result_test_dic['f1'],result_test_dic['precision'],result_test_dic['recall']])
 
     # adding rows to the dataframe using loc(key)
     outputs = pd.DataFrame(
@@ -341,7 +368,11 @@ with machine_learning:
     st.write(classification_report_output)
 
     st.subheader('Miss-classified data ')
-    st.write(miss_data)
+    st.subheader('Data wrongly classified as positive by the model')
+    st.write(fp_df)
+
+    st.subheader('Data wrongly classified as negative by the model')
+    st.write(fn_df)
 
     st.subheader('Receiver operating characteristics curve on Cross validated dataset')
     st.pyplot(fig)
