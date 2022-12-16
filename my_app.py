@@ -30,6 +30,7 @@ RANDOM_STATE = 1
 header = st.container()
 dataset = st.container()
 eda = st.container()
+data_preparation = st.container()
 machine_learning = st.container()
 
 
@@ -204,6 +205,8 @@ with dataset:
                            'Naive_Bayes_Classifier_Attrition_Flag_Card_Category_Contacts_Count_12_mon_Dependent_count_Education_Level_Months_Inactive_12_mon_2',
                            'CLIENTNUM'], axis=1,
                           inplace=True)
+    # category conversion
+    cc_df = cate_type(credit_card_data)
 
 
 def fi(model):
@@ -242,51 +245,64 @@ with eda:
     credit_card_data = credit_card_data.replace(
         {'Existing Customer': 0, 'Attrited Customer': 1})
 
-with machine_learning:
-
-    st.header('Machine learning: Predicting Attrition')
-    st.subheader('Data Peparation Options')
-
-    # (a)asking user for feature engineering options :(a) create a new feature
-    st.markdown('Do you want to add a new feature, average transaction amount.')
-    st.markdown(
-        'Average transaction amount = Total transaction amount/ Total transaction count')
-    feature_selection_ouput = st.selectbox(
-        'Adding this feature will give more insights to machine learning model', ('Yes', 'No'))
-
-    # (b) scale the features
-    st.markdown('Do you want to scale the numerical features?')
-    scale_selection_ouput = st.selectbox(
-        'Scaling will bring all the numerical features on the same scale, helping the machine learning model to learn better.', ('Yes', 'No'))
-
-    # category conversion
-    cc_df = cate_type(credit_card_data)
-
+def exec_data_prep(cc_df, feature_selection_ouput, scale_selection_ouput):
     if feature_selection_ouput == 'Yes':
         cc_df = new_feat(cc_df)
 
     if scale_selection_ouput == 'Yes':
         cc_df = stan_scal(cc_df)
+    
+    return cc_df
 
-    st.write("Data sample:", cc_df.head())
 
-    st.subheader('ML Experiment Options')
+with data_preparation:
+    st.subheader('Data Peparation Options')
 
+    
+    # (a)asking user for feature engineering options :(a) create a new feature
+    # st.markdown('Adding this feature will give more insights to machine learning model')
+    # st.markdown(
+        # 'Average transaction amount = Total transaction amount/ Total transaction count')
+
+    form_data_prep = st.form(key = 'data_prep')
+    
+    
+    feature_selection_ouput = form_data_prep.selectbox('Do you want to add a new feature, average transaction amount.', ('Yes', 'No'))
+
+    # (b) scale the features
+    st.markdown('Scaling will bring all the numerical features on the same scale, helping the machine learning model to learn better.')
+    scale_selection_ouput = form_data_prep.selectbox(
+        'Do you want to scale the numerical features?', ('Yes', 'No'))
+
+    data_prep_button_pressed = form_data_prep.form_submit_button("Click for data prep")
+
+    if data_prep_button_pressed:
+        cc_df = exec_data_prep(cc_df, feature_selection_ouput, scale_selection_ouput)
+        st.write("Data sample:", cc_df.head())
+
+with machine_learning:
+    machine_learning.header('Machine learning: Predicting Attrition')
+    machine_learning.subheader('ML Experiment Options')
+
+    form_ml = st.form(key = 'ml')
     # 2. asking user for Model selection: (a) Random Forest
-    model_selection_ouput = st.selectbox(
+    model_selection_ouput = form_ml.selectbox(
         'Which model do you want to select ?', ('XGBClassifier', 'Random Forest Classifier'))
 
     # 3.asking user for Model selection: (a)number of estimators
-    estimators_input = st.slider(
+    estimators_input = form_ml.slider(
         'What should be the number of trees?', min_value=100, max_value=600, step=100)
 
     # 3 asking user for max depth
-    max_depth_input = st.slider(
+    max_depth_input = form_ml.slider(
         'What should be the max depth of trees?', min_value=2, max_value=8, step=1)
 
     # 4 asking user for cv folds
-    n_folds = st.slider('How many CV folds?',
+    n_folds = form_ml.slider('How many CV folds?',
                         min_value=5, max_value=10, step=1)
+
+
+    ml_form_submit_button_output = form_ml.form_submit_button("Submit for ML predictions")
 
     # Dividing data into train and test
     # we are divinding dataset into  train -90% and test -10% of the dataset
@@ -294,92 +310,92 @@ with machine_learning:
     # this is required since my cv function requires complete data set. features as well as label
     train_final = X_train.join(y_train)
 
-    if model_selection_ouput == 'Random Forest Classifier':
-        model = RandomForestClassifier(
-            n_estimators=estimators_input, max_depth=max_depth_input, random_state=RANDOM_STATE)
-    else:
-        model = XGBClassifier(n_estimators=estimators_input,
-                              max_depth=max_depth_input, random_state=RANDOM_STATE)
 
-    st.subheader('Evaluation Metrics')
+    if ml_form_submit_button_output:
+        if model_selection_ouput == 'Random Forest Classifier':
+            model = RandomForestClassifier(
+                n_estimators=estimators_input, max_depth=max_depth_input, random_state=RANDOM_STATE)
+        else:
+            model = XGBClassifier(n_estimators=estimators_input,
+                                max_depth=max_depth_input, random_state=RANDOM_STATE)
 
-    # results from cv evaluation stored in a list. F1, precision, recall in this order.
+        st.subheader('Evaluation Metrics')
 
-    result_train = list(cv_score_model(train_final, model, n_folds))
+        # results from cv evaluation stored in a list. F1, precision, recall in this order.
 
-
-    tpr = result_train.pop()
-    fpr = result_train.pop()
-    result_train = ['Train set'] + result_train
-
-    # printing roc-auc
-    fig = plt.figure(figsize=(10, 4))
-    plt.plot(fpr, tpr)
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-
-    # result of evaluation from testing set
-    result_test_dic = train_eval(model, X_train, X_test_f, y_train, y_test_f)
-
-#  output_dic = {'f1':round(f1_score(y_test, predictions), 3),
-#     'precision':round(precision_score(y_test, predictions), 3),
-#     'recall':(recall_score(y_test, predictions), 3),
-#     'classification':classification_report(y_test, predictions, output_dict=True),
-#     'false_positves':fp_df,
-#     'false_negatives':fn_df}
-
-    # miss classified data
-    fp_df = result_test_dic['false_positves']
-    fn_df = result_test_dic['false_negatives']
+        result_train = list(cv_score_model(train_final, model, n_folds))
 
 
-    # putting classification report in a dataframe
-    classification_report_output = pd.DataFrame(
-        data=result_test_dic['classification']).transpose()
+        tpr = result_train.pop()
+        fpr = result_train.pop()
+        result_train = ['Train set'] + result_train
 
-    classification_report_output = classification_report_output.rename(
-        index={'0': 'Existing Customer', '1': 'Attrited Customer'})
+        # printing roc-auc
+        fig = plt.figure(figsize=(10, 4))
+        plt.plot(fpr, tpr)
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
 
-    classification_report_output = classification_report_output.round(3)
+        # result of evaluation from testing set
+        result_test_dic = train_eval(model, X_train, X_test_f, y_train, y_test_f)
 
-    # adding a column name
+    #  output_dic = {'f1':round(f1_score(y_test, predictions), 3),
+    #     'precision':round(precision_score(y_test, predictions), 3),
+    #     'recall':(recall_score(y_test, predictions), 3),
+    #     'classification':classification_report(y_test, predictions, output_dict=True),
+    #     'false_positves':fp_df,
+    #     'false_negatives':fn_df}
 
-    result_test = ['Hold out test set'] + list([result_test_dic['f1'],result_test_dic['precision'],result_test_dic['recall']])
+        # miss classified data
+        fp_df = result_test_dic['false_positves']
+        fn_df = result_test_dic['false_negatives']
 
-    # adding rows to the dataframe using loc(key)
-    outputs = pd.DataFrame(
-        columns=['Scores', 'F1 ', 'Precision ', 'Recall score'])
-    outputs.loc[0] = result_train
-    outputs.loc[1] = result_test
 
-   # feature importance
-    fig3 = plt.figure(figsize=(10,4))
-    fi_df = fi(model)
-    plt.xticks(rotation='vertical')
-    sns.barplot(data=fi_df,x=fi_df['Features'],y=fi_df['Importance'])
+        # putting classification report in a dataframe
+        classification_report_output = pd.DataFrame(
+            data=result_test_dic['classification']).transpose()
+
+        classification_report_output = classification_report_output.rename(
+            index={'0': 'Existing Customer', '1': 'Attrited Customer'})
+
+        classification_report_output = classification_report_output.round(3)
+
+        # adding a column name
+
+        result_test = ['Hold out test set'] + list([result_test_dic['f1'],result_test_dic['precision'],result_test_dic['recall']])
+
+        # adding rows to the dataframe using loc(key)
+        outputs = pd.DataFrame(
+            columns=['Scores', 'F1 ', 'Precision ', 'Recall score'])
+        outputs.loc[0] = result_train
+        outputs.loc[1] = result_test
+
+    # feature importance
+        fig3 = plt.figure(figsize=(10,4))
+        fi_df = fi(model)
+        plt.xticks(rotation='vertical')
+        sns.barplot(data=fi_df,x=fi_df['Features'],y=fi_df['Importance'])
+        
     
-       
-    
-    
-    
-    # showing the ouputs
-    st.write(outputs.head())
-    st.subheader('Classification Report on Hold out set')
-    st.write(classification_report_output)
+        
+        # showing the ouputs
+        st.write(outputs.head())
+        st.subheader('Classification Report on Hold out set')
+        st.write(classification_report_output)
 
-    st.subheader('Miss-classified data ')
-    st.subheader('Data wrongly classified as positive by the model')
-    st.write(fp_df)
+        st.subheader('Miss-classified data ')
+        st.subheader('Data wrongly classified as positive by the model')
+        st.write(fp_df)
 
-    st.subheader('Data wrongly classified as negative by the model')
-    st.write(fn_df)
+        st.subheader('Data wrongly classified as negative by the model')
+        st.write(fn_df)
 
-    st.subheader('Receiver operating characteristics curve on Cross validated dataset')
-    st.pyplot(fig)
+        st.subheader('Receiver operating characteristics curve on Cross validated dataset')
+        st.pyplot(fig)
 
-    button_result = st.button("Click for feature importance chart")
-    if button_result:
-        # st.write(fi)
-        st.pyplot(fig3)
+        button_result = st.button("Click for feature importance chart")
+        if button_result:
+            # st.write(fi)
+            st.pyplot(fig3)
 
  
