@@ -308,7 +308,7 @@ with machine_learning:
                         min_value=5, max_value=10, step=1)
 
 
-    ml_form_submit_button_output = form_ml.form_submit_button("Submit for ML predictions")
+    ml_form_submit_button_output = form_ml.form_submit_button("Submit for training and evaluation")
 
     # Dividing data into train and test
     # we are divinding dataset into  train -90% and test -10% of the dataset
@@ -320,10 +320,10 @@ with machine_learning:
     if ml_form_submit_button_output:
         if model_selection_ouput == 'Random Forest Classifier':
             model = RandomForestClassifier(
-                n_estimators=estimators_input, max_depth=max_depth_input, random_state=RANDOM_STATE)
+                n_estimators=estimators_input, max_depth=max_depth_input, random_state=RANDOM_STATE, n_jobs = -1)
         else:
             model = XGBClassifier(n_estimators=estimators_input,
-                                max_depth=max_depth_input, random_state=RANDOM_STATE)
+                                max_depth=max_depth_input, random_state=RANDOM_STATE, n_jobs = -1)
 
         st.subheader('Evaluation Metrics')
 
