@@ -79,7 +79,7 @@ def cv_score_model(df, model, folds=5, label_col_name="Attrition_Flag"):
 
         # predicting probabilty of predictions
         pred_prob = model.predict_proba(X_test)[::, 1]
-        fpr, tpr, _ = roc_curve(y_test, pred_prob)
+        fnr, tpr, _ = roc_curve(y_test, pred_prob)
 
         f1: float = float(f1_score(y_test, pred))
         f1_score_c.append(f1)
@@ -92,8 +92,16 @@ def cv_score_model(df, model, folds=5, label_col_name="Attrition_Flag"):
 
         rec = recall_score(y_test, pred)
         recall.append(rec)
+    
+    output_dictionary = {'f1_score':np.mean(f1_score_c),
+    'precision':np.mean(precision),
+    'recall':np.mean(recall),
+    'fnr':fnr,
+    'tpr':tpr
+    }
 
-    return np.mean(f1_score_c), np.mean(precision), np.mean(recall), fpr, tpr
+
+    return output_dictionary
 
 # simple evaluation
 
@@ -118,20 +126,12 @@ def train_eval(model, X_train, X_test, y_train, y_test):
     
     output_dic = {'f1':round(f1_score(y_test, predictions), 3),
     'precision':round(precision_score(y_test, predictions), 3),
-    'recall':(recall_score(y_test, predictions), 3),
+    'recall':round(recall_score(y_test, predictions), 3),
     'classification':classification_report(y_test, predictions, output_dict=True),
     'false_positves':fp_df,
     'false_negatives':fn_df}
 
     return output_dic
-
-    # return (round(f1_score(y_test, predictions), 3),
-    #         round(precision_score(y_test, predictions), 3),
-    #         round(recall_score(y_test, predictions), 3),
-    #         classification_report(y_test, predictions, output_dict=True),
-    #         fp_df,
-    #         fn_df)
-
 
 # adding a new feature
 @st.cache
@@ -208,12 +208,18 @@ with dataset:
     # category conversion
     cc_df = cate_type(credit_card_data)
 
-
+#feature importance function
 def fi(model):
-    f = pd.DataFrame({'Features': model.feature_names_in_,
+    fi_df = pd.DataFrame({'Features': model.feature_names_in_,
                      'Importance': model.feature_importances_})
-    f.sort_values(by='Importance', ascending=False, inplace=True)
-    return f
+    fi_df.sort_values(by='Importance', ascending=False, inplace=True)
+    fig3 = plt.figure(figsize=(10,4))
+    plt.xticks(rotation='vertical')
+    sns.barplot(data=fi_df,x=fi_df['Features'],y=fi_df['Importance'])
+    
+    
+    return fig3
+
 
 
 with eda:
@@ -322,29 +328,25 @@ with machine_learning:
         st.subheader('Evaluation Metrics')
 
         # results from cv evaluation stored in a list. F1, precision, recall in this order.
+    
 
-        result_train = list(cv_score_model(train_final, model, n_folds))
+        result_train_dic = cv_score_model(train_final, model, n_folds)
 
 
-        tpr = result_train.pop()
-        fpr = result_train.pop()
-        result_train = ['Train set'] + result_train
+        tpr = result_train_dic['tpr']
+        fnr = result_train_dic['fnr']
+        result_train = ['Train set'] + list([result_train_dic['f1_score'],result_train_dic['precision'],result_train_dic['recall']])
 
         # printing roc-auc
         fig = plt.figure(figsize=(10, 4))
-        plt.plot(fpr, tpr)
+        plt.plot(fnr, tpr)
         plt.xlabel('False Positive Rate')
         plt.ylabel('True Positive Rate')
 
         # result of evaluation from testing set
         result_test_dic = train_eval(model, X_train, X_test_f, y_train, y_test_f)
 
-    #  output_dic = {'f1':round(f1_score(y_test, predictions), 3),
-    #     'precision':round(precision_score(y_test, predictions), 3),
-    #     'recall':(recall_score(y_test, predictions), 3),
-    #     'classification':classification_report(y_test, predictions, output_dict=True),
-    #     'false_positves':fp_df,
-    #     'false_negatives':fn_df}
+    
 
         # miss classified data
         fp_df = result_test_dic['false_positves']
@@ -370,11 +372,7 @@ with machine_learning:
         outputs.loc[0] = result_train
         outputs.loc[1] = result_test
 
-    # feature importance
-        fig3 = plt.figure(figsize=(10,4))
-        fi_df = fi(model)
-        plt.xticks(rotation='vertical')
-        sns.barplot(data=fi_df,x=fi_df['Features'],y=fi_df['Importance'])
+    
         
     
         
@@ -393,9 +391,12 @@ with machine_learning:
         st.subheader('Receiver operating characteristics curve on Cross validated dataset')
         st.pyplot(fig)
 
-        button_result = st.button("Click for feature importance chart")
-        if button_result:
-            # st.write(fi)
-            st.pyplot(fig3)
+
+      
+        fig = fi(model)
+        st.pyplot(fig)
+        # 
+
+   
 
  
